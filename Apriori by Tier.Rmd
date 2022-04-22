@@ -1,0 +1,256 @@
+---
+title: "Student Characteristics by Tier"
+author: "Jay Kim"
+date: "3/30/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = FALSE,
+	message = FALSE,
+	warning = FALSE
+)
+library(readr)
+library(arules)
+library(arulesViz)
+library(tidyverse)
+library(lubridate)
+library(scales)
+ 
+```
+
+
+```{r data shaping, eval=FALSE, include=FALSE}
+
+FTIC_ENROLLMENT_FIN_GROUPED2 <- read_csv("G:/Shared drives/HMCSE-PAM Lab/Jay's Space/_DataShaping/FTIC_ENROLLMENT_FIN_GROUPED2.csv") 
+#PELL_code <- read_csv("G:/Shared drives/HMCSE-PAM Lab/Jay's Space/2022 Active Projects/01/ACEX_CAL/PELL_code.csv")
+
+#FTIC_ENC_PELL <- merge(FTIC_ENROLLMENT_FIN_GROUPED2, PELL_code, by = c("FTIC_UWFID", "FTIC_DEMO_TIME_FRAME"), all.x=T)
+# filter tier with first term
+bytier <- FTIC_ENROLLMENT_FIN_GROUPED2 %>%  filter(UWF_YearCode =="UWFYear1" & FTIC_Term == "Fall" ) %>%  # remove summer starters
+     mutate(APPLICANT_TIER = ifelse(is.na(APPLICANT_TIER), "NA", APPLICANT_TIER)) %>% 
+    group_by(FTIC_UWFID) %>% 
+    filter(FTIC_DEMO_TIME_FRAME == min(FTIC_DEMO_TIME_FRAME))
+hist(bytier$TotalFinAid_Term)
+#check
+FTIC_ENROLLMENT_FIN_GROUPED2[FTIC_ENROLLMENT_FIN_GROUPED2$FTIC_UWFID=="970403465",]
+bytier[bytier$FTIC_UWFID=="970516120",]
+bytier[bytier$FTIC_Term=="Fall",]
+bytier[bytier$TotalFinAid_Term == 0,]
+addmargins(table(bytier$FTIC_Term, bytier$FTIC_Cohort))
+
+app_data_info <- read_csv("G:/Shared drives/HMCSE-PAM Lab/Jay's Space/2021 Active Projects/08/ACCEPTANCE RATE/app2017to2022.all.load.12.2021_V0.csv")  %>%
+    group_by(UWFID) %>% filter(APP_NO == max(APP_NO) & (APP_DT == max(APP_DT))) %>% filter(!duplicated(UWFID))
+ 
+
+by_tier_app <- merge(bytier, app_data_info, by.x="FTIC_UWFID", by.y="UWFID", all.x = T) %>% select(-contains("PROB"))
+
+more.info <- by_tier_app  %>%
+    mutate(APP_DT = as.Date(APP_DT, "%m/%d/%Y"), DEC_DATE= as.Date(DEC_DATE, "%m/%d/%Y")) %>% 
+    mutate(APP_DT_month = format(as.Date(APP_DT), "%m")) %>% 
+    mutate(DOB1 =  as.Date(DOB, "%m/%d/%Y"), FTIC_Age = round(as.numeric(difftime(APP_DT, DOB1, units = "weeks"))/52.25,0),
+           DaysDecision= round(as.numeric(difftime(DEC_DATE, APP_DT, units = "days")) ,0)) %>% 
+    mutate(GRADHSDATE =  as.Date(HS_GRAD_DT, "%m/%d/%Y"), 
+           GradHSYear = round(as.numeric(difftime(APP_DT, GRADHSDATE, units = "weeks"))/52.25,1)) %>% mutate_at(c(30:37), replace_na, 0) %>% 
+    mutate(GradHSYear = ifelse(GradHSYear <= 0, 0, GradHSYear)) %>%  
+    mutate( TotalFinAid_Term = ifelse(is.na(TotalFinAid_Term), 0, TotalFinAid_Term)) %>% 
+    mutate(AfterGradHS=ifelse(GradHSYear !=0, "AppliedOverTime","AppliedOnTime")) %>% 
+    mutate(PELL_ELGBL = ifelse(PELL_ELGBL == "Y", "PELL_ELGBL", "NOT_PELL_ELGBL")) %>% 
+    mutate(PELL_VERF = as.character(PELL_VERF)) %>% 
+    #mutate(Is.PELL = ifelse(is.na(Is.PELL), "HighFamilyIncome", "LowFamilyIncome")) %>% 
+    mutate_if(is.character, as.factor) 
+colnames(more.info)
+# aid infor
+aidinfor <- more.info %>% select(30:38) %>% mutate_at(c(1:8), ~ifelse(.x == 0, NA ,"Yes"))  %>% 
+    mutate(ScholarshipsMixedTypes = ifelse(!is.na(ScholarshipsMixedTypes), "MixedAidType","NoMixedAidType")) %>% 
+    mutate(ScholarshipsInstitutionalTypes = ifelse(!is.na(ScholarshipsInstitutionalTypes), "MeritType","NoMeritType")) %>% 
+    mutate(GrantTypes = ifelse(!is.na(GrantTypes), "GrantTypes","NoGrantTypes")) %>% 
+    mutate(LoanTypes = ifelse(!is.na(LoanTypes), "LoanTypes","NoLoanTypes")) %>% 
+    mutate(PELLGrant = ifelse(!is.na(PELLGrant), "PELLGrant","NoPELLGrant")) %>% 
+    mutate(ScholarshipsPrivateTypes = ifelse(!is.na(ScholarshipsPrivateTypes), "PrivateType","NoPrivateType")) %>% 
+    mutate(ScholarshipsOtherStateTypes = ifelse(!is.na(ScholarshipsOtherStateTypes), "OtherStateType","NoOtherStateType")) %>% 
+    mutate(ScholarshipsStateBFTypes = ifelse(!is.na(ScholarshipsStateBFTypes), "BrightFutureType","NoBrightFutureType")) %>% 
+    mutate(TotalFinAid_Term = ifelse(TotalFinAid_Term != 0 , "SomeAid","NoAid"))  %>% 
+    mutate(FamilyIncome = ifelse(PELLGrant=="NoPELLGrant",  "HighFamilyIncome", "LowFamilyIncome"))
+    
+# column names     
+names(aidinfor) <- paste("Is.", names(aidinfor), sep="")
+compdatatwo <- cbind(more.info, aidinfor)
+
+first_gen_info_set <- read_csv("G:/Shared drives/HMCSE-PAM Lab/Jay's Space/_DataShaping/first_gen_info_set.csv") 
+#check id
+first_gen_info_set[first_gen_info_set$FTIC_UWFID== "970353396",]
+compdatathree <- merge(compdatatwo, first_gen_info_set, by= "FTIC_UWFID", all.x =TRUE)
+
+write.csv(compdatathree,  "compdatathree.csv", row.names = FALSE) #5275
+saveRDS(compdatathree, "student_character_1stFall_df.rds")
+
+```
+
+### Summary Table by Tiers
+
+```{r filtered tier, echo=FALSE}
+# trimming data tri county HS CNTY and FL residency
+
+compdatathree <-  read_csv("compdatathree.csv")
+
+#duplicated(firstgeninfo$UWFID)
+tricounty <- c("Escambia", "Santa Rosa", "Okaloosa")
+compdata <- compdatathree  %>%  
+        filter(FTIC_FeeResidency == "Florida Resident (USA)" & HS_CNTY %in% tricounty) %>% #filtered data
+        mutate(App_Month = format(as.Date(APP_DT), "%m")) %>% 
+        mutate(Age = ifelse( FTIC_Age <= 20, "Under 20","Over 21")) %>% 
+        mutate(Awared_PELL = ifelse(PELLGrant == 0, "No", "Yes")) %>% 
+        mutate(AidNotPellMerit = TotalFinAid_Term -PELLGrant-ScholarshipsInstitutionalTypes) %>% 
+        mutate(TotalAid_NotPellorMerit = ifelse(AidNotPellMerit <= 0, "No", "Yes")) %>% 
+        mutate(OtherFinAidSupport = ifelse(AidNotPellMerit == 0 , "NoAid", ifelse(AidNotPellMerit <= 3000, "Below$3,000", "Above$3,000"))) %>% 
+        mutate(Pell_Amount = ifelse(PELLGrant == 0, "NoPell",  ifelse(PELLGrant <= 3000, "Below$3,000", "Above$3,000"))) %>%
+        mutate(Awarded_Loan = ifelse(LoanTypes == 0, "No", "Yes" )) %>% 
+        mutate(HS_NAME = ifelse(is.na(HS_NAME), "Not available", HS_NAME)) %>% 
+        mutate(First_Generation = ifelse(Stu_FirstGenInd =="N", "No","Yes")) %>% 
+        mutate(Merit_Scholarships = ifelse(ScholarshipsInstitutionalTypes== 0, "No","Yes")) %>% 
+        mutate(BF_Scholarships = ifelse(ScholarshipsStateBFTypes == 0, "No","Yes")) %>%  
+       # filter(APPLICANT_TIER %in% input$tiers  ) %>% #filter tiers
+        mutate_if(is.character, as.factor) %>% 
+        select("HS_Name"=HS_NAME, 
+               App_Month,
+               "Ethnicity"=FTIC_Ethnicity, 
+               "Gender"=FTIC_Gender,
+               Merit_Scholarships,
+               BF_Scholarships,
+               "Entry_Program"=FTIC_ProgramCIPDesc,
+               #Awared_PELL,
+               #TotalAid_NotPellorMerit,
+               First_Generation, 
+               APPLICANT_TIER) # remove cohort for freq.plot
+
+library(gtsummary)
+summarytabletier <- compdata %>%  #elect(-HS_NAME, -HS_CNTY) %>% 
+    tbl_summary( by = APPLICANT_TIER,
+                statistic = all_continuous() ~ "{mean} ({sd}) {min} {max}",
+                missing = "no") %>% add_n()
+
+summarytabletier
+```
+### Association Rules ( lift > 1.1) for Tier 1
+
+```{r tier1 Rules}
+data_tier1 <- compdata %>% filter(APPLICANT_TIER == 1)
+ruledatatest <- as(data_tier1[,-9], "transactions")
+ 
+# Freq Plot
+itemFrequencyPlot( ruledatatest, topN =20, main="Top 20 Frequency Plot", type="absolute")
+# rules 
+rules_t1 <- apriori( data= ruledatatest, parameter = list(support = 0.01, confidence = 0.6) ) #, appearance = list(lhs = "FinAidTerm")) #, appearance = list( lhs = "FTIC_Ethnicity"))
+# filter by lift 1.5
+filterd_rules <- subset(rules_t1, subset = lift > 1.1)
+no_redundant_rules <- filterd_rules[!is.redundant(filterd_rules)]   
+ 
+# remove non-significant rules (used Fisher's exact test)
+only_sig_ruels <- no_redundant_rules[!is.significant(no_redundant_rules),]
+ruels.df1 <- inspectDT(sort(only_sig_ruels, by="lift")) 
+ruels.df1
+```
+
+### Association Rules ( lift > 1.1) for Tier 2
+
+```{r tier2 Rules}
+data_tier2 <- compdata %>% filter(APPLICANT_TIER ==2)
+ruledatatest <- as(data_tier2[,-9], "transactions")
+ 
+# Freq Plot
+itemFrequencyPlot( ruledatatest, topN =20, main="Top 20 Frequency Plot", type="absolute")
+# rules 
+rules_t1 <- apriori( data= ruledatatest, parameter = list(support = 0.01, confidence = 0.6) ) #, appearance = list(lhs = "FinAidTerm")) #, appearance = list( lhs = "FTIC_Ethnicity"))
+# filter by lift 1.5
+filterd_rules <- subset(rules_t1, subset = lift > 1.1)
+no_redundant_rules <- filterd_rules[!is.redundant(filterd_rules)]   
+ 
+# remove non-significant rules (used Fisher's exact test)
+only_sig_ruels <- no_redundant_rules[!is.significant(no_redundant_rules),]
+ruels.df2 <- inspectDT(sort(only_sig_ruels, by="lift")) 
+ruels.df2
+```
+### Association Rules ( lift > 1.1) for Tier 3
+
+```{r tier3 Rules}
+data_tier3 <- compdata %>% filter(APPLICANT_TIER == 3)
+ruledatatest <- as(data_tier3[,-9], "transactions")
+ 
+# Freq Plot
+itemFrequencyPlot( ruledatatest, topN =20, main="Top 20 Frequency Plot", type="absolute")
+# rules 
+rules_t1 <- apriori( data= ruledatatest, parameter = list(support = 0.01, confidence = 0.6) ) #, appearance = list(lhs = "FinAidTerm")) #, appearance = list( lhs = "FTIC_Ethnicity"))
+# filter by lift 1.5
+filterd_rules <- subset(rules_t1, subset = lift > 1.1)
+no_redundant_rules <- filterd_rules[!is.redundant(filterd_rules)]   
+ 
+# remove non-significant rules (used Fisher's exact test)
+only_sig_ruels <- no_redundant_rules[!is.significant(no_redundant_rules),]
+ruels.df3 <- inspectDT(sort(only_sig_ruels, by="lift")) 
+ruels.df3
+```
+### Association Rules ( lift > 1.1) for Tier 4
+
+```{r tier4 Rules}
+data_tier4 <- compdata %>% filter(APPLICANT_TIER ==4)
+ruledatatest <- as(data_tier4[,-9], "transactions")
+ 
+# Freq Plot
+itemFrequencyPlot( ruledatatest, topN =20, main="Top 20 Frequency Plot", type="absolute")
+# rules 
+rules_t1 <- apriori( data= ruledatatest, parameter = list(support = 0.01, confidence = 0.6) ) #, appearance = list(lhs = "FinAidTerm")) #, appearance = list( lhs = "FTIC_Ethnicity"))
+# filter by lift 1.5
+filterd_rules <- subset(rules_t1, subset = lift > 1.1)
+no_redundant_rules <- filterd_rules[!is.redundant(filterd_rules)]   
+ 
+# remove non-significant rules (used Fisher's exact test)
+only_sig_ruels <- no_redundant_rules[!is.significant(no_redundant_rules),]
+ruels.df4 <- inspectDT(sort(only_sig_ruels, by="lift")) 
+ruels.df4
+```
+### Association Rules ( lift > 1.1) for Tier 5
+
+```{r tier5 Rules}
+data_tier5 <- compdata %>% filter(APPLICANT_TIER == 5)
+ruledatatest <- as(data_tier5[,-9], "transactions")
+ 
+# Freq Plot
+itemFrequencyPlot( ruledatatest, topN =20, main="Top 20 Frequency Plot", type="absolute")
+# rules 
+rules_t1 <- apriori( data= ruledatatest, parameter = list(support = 0.01, confidence = 0.6) ) #, appearance = list(lhs = "FinAidTerm")) #, appearance = list( lhs = "FTIC_Ethnicity"))
+# filter by lift 1.5
+filterd_rules <- subset(rules_t1, subset = lift > 1.1)
+no_redundant_rules <- filterd_rules[!is.redundant(filterd_rules)]   
+ 
+# remove non-significant rules (used Fisher's exact test)
+only_sig_ruels <- no_redundant_rules[!is.significant(no_redundant_rules),]
+ruels.df5 <- inspectDT(sort(only_sig_ruels, by="lift")) 
+ruels.df5
+```
+
+
+```{r export datatable, eval=FALSE, include=FALSE}
+ruels.dataframe <- DATAFRAME(only_sig_ruels, setStart ="", setEnd ="", separate = TRUE) %>% arrange(-lift) %>% mutate_at(c(3:6), ~round(.,  2))
+ruels.dataframe %>% datatable()
+write.csv(ruels.dataframe, "ruels.df.csv", row.names = FALSE)
+
+
+### Visualization
+
+
+
+outresults <- inspectDT(head(sort(no_redundant_rules, by="lift"), 30))
+outresults
+
+htmlwidgets::saveWidget(outresults, "outresults.html", selfcontained = FALSE)
+browseURL("outresults.html") # same
+
+# rules top 10 by lift
+subrules <- head(rules_t1, n = 15, by = "lift")
+plot(x=subrules, method ="graph", engine = "htmlwidget")
+ 
+
+```
+

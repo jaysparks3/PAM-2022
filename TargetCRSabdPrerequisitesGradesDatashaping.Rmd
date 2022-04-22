@@ -1,0 +1,122 @@
+---
+title: "Prerequisites"
+author: "Jay Kim"
+date: "2/8/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE
+)
+```
+
+### Shanping Data
+
+```{r}
+library(readr)
+library(tidyverse)
+library(plotly)
+prereq_replace <- read_csv("G:/Shared drives/HMCSE-PAM Lab/Jay's Space/2022 Active Projects/01/Prerequisites and Target courses/prereq_replace.csv")
+prerep_no_prerep <- prereq_replace %>% filter(!is.na(Replace)) #1534/2792 filtered no prerep
+
+#from courses taken data set all type
+select_crs_vari202108V0 <- read_csv("G:/Shared drives/HMCSE-PAM Lab/Jay's Space/_DataShaping/select_crs_vari202108V0.csv") %>% #from 201505 ~202108
+                            filter(!is.na(CRS_PREFIX)) %>% 
+        mutate(CRS_NAME1 = paste(CRS_PREFIX,CRS_NBR,CRS_IND, sep="" )) %>% 
+        mutate(CRSE_NAME = gsub("[[:punct:]]", "", CRS_NAME1)) %>% select(-CRS_NAME1) %>% 
+        mutate(CRS_PASS = ifelse(Grade_point <= 1.3, "Failed", "Passed" )) %>%  # DWF 
+        mutate(CRS_PASS_ID = ifelse(Grade_point <= 1.3, 0, 1 ))
+
+prereq_filter1 <- select_crs_vari202108V0 %>% group_by(UWFID) %>% 
+    filter( CRSE_NAME %in% prerep_no_prerep$Course ) %>% # target courses
+    select(UWFID, "TargetCRS_GRADES"=GRADE_AWARDED, "TargetCRSGP"=Grade_point, "TargetCRSNAME"=CRSE_NAME, "TargetCRSPASS"=CRS_PASS, "TargetCRSPASSID"=CRS_PASS_ID)
+prereq_filter1_1 <- merge(prereq_filter1, prerep_no_prerep, by.x= "TargetCRSNAME", by.y= "Course", all.x = T )  # add lists of prerequisites
+
+prereq_filter2 <- select_crs_vari202108V0 %>% group_by(UWFID) %>% 
+    filter( CRSE_NAME %in% prerep_no_prerep$Replace ) %>% # prerequisites
+     select(UWFID, "PrereqCRS_GRADES"=GRADE_AWARDED, "PrereqGP"=Grade_point, "PrereqCRSNAME"=CRSE_NAME  )
+prereq_filter2_1 <- merge(prereq_filter2, prerep_no_prerep, by.x= "PrereqCRSNAME", by.y= "Replace", all.x = T ) # add target courses
+table(course_data$Cohort)
+FTIC_ID <- course_data %>% select(UWFID) %>% unique() %>% 
+    mutate(TYPE = rep("FTIC")) # filtered FTICs
+
+# grades range
+A_range <- c("A","A-")
+B_range <- c("B","B-","B+")
+C_range <- c("C","C+","C-")
+DWF <- c("D","D+","W","F","NF","U")
+
+#### Merge target and prereq by (uwfid, target, prereq)
+prereq_filter3 <- merge(prereq_filter1_1, prereq_filter2_1, 
+                        by.x =c("UWFID", "TargetCRSNAME", "Replace"), by.y=c("UWFID","Course","PrereqCRSNAME"), all = T) %>% 
+    select(1,2,4,5,6,7,"PrereqCRSNAME"=3,8,9) %>% 
+    mutate(PrereqCRS_GRADES4 = ifelse(PrereqCRS_GRADES %in% A_range,  "A range",
+                                   ifelse(PrereqCRS_GRADES %in% B_range,  "B range",
+                                          ifelse(PrereqCRS_GRADES %in% C_range, "C range", 
+                                                 ifelse(is.na(PrereqCRS_GRADES), NA, "DWF"))))) 
+
+test_prereq_df <- merge(prereq_filter3, FTIC_ID, by="UWFID", all.x = T) %>% # extract them by FTIC uwfids
+    mutate(TYPE = ifelse(is.na(TYPE), "NonFTIC", TYPE)) # created a filter type
+
+
+# save the file
+write.csv(test_prereq_df, "TargetCRSPassingRateByPrerequisitesGradesV1.csv", row.names = F)
+
+library(readr)
+test_prereq_df <- read_csv("G:/Shared drives/HMCSE-PAM Lab/Jay's Space/2022 Active Projects/01/Prerequisites and Target courses/TargetCRSPassingRateByPrerequisitesGradesV1.csv")
+
+test_prereq_df1 <- test_prereq_df %>% 
+  mutate(PrereqCRS_GRADES4 = ifelse(is.na(PrereqCRS_GRADES), NA, PrereqCRS_GRADES4)) %>% 
+      mutate(PrereqCRS_GRADES = ordered( PrereqCRS_GRADES, levels=c("A","A-","B+","B","B-","C+","C","C-","D+","D","F","NF","U","W")))
+test_prereq_df1[test_prereq_df1$TargetCRSNAME =="MAC2311",]
+```
+
+### For PAM Lab dashboard data table
+
+```{r  Brian's dataset}
+#requests data table with calculation
+Split_Passing_Rate1 <- test_prereq_df1 %>%  
+     filter(TYPE =="FTIC") %>%
+     #filter(PrereqCRSNAME == "MAC1105" & TargetCRSNAME == "MAC1147") %>%
+     filter(PrereqCRS_GRADES4 != "DWF") %>% # excluded DWF
+     group_by(TargetCRSNAME , PrereqCRSNAME, PrereqCRS_GRADES4,TargetCRSPASS ) %>%  # group by ranges
+     count() %>% na.omit() %>% # removed without prerequisites and no target coursers
+     tidyr::pivot_wider(names_from = TargetCRSPASS, values_from = n) %>%
+    replace(is.na(.), 0) %>% 
+    mutate(SUM = sum(Passed, Failed)) %>% 
+      mutate(PassProp = paste(round(Passed/SUM*100,2),  '%', sep=" "), 
+            FailProp= paste(round(Failed/SUM*100,2),  '%', sep=" "))
+
+write.csv(Split_Passing_Rate1, "Split_Passing_RateV00.csv", row.names = F)
+Split_Passing_Rate1[Split_Passing_Rate1$TargetCRSNAME=="MAC2311",]
+# write.csv(Split_Passing_Rate1, "Split_Passing_RateV1.csv", row.names = F)
+# Split_Passing_Rate1 <- read_csv("Split_Passing_RateV1.csv")
+
+```
+
+
+### Plot Target courses vs. Prereq.
+
+```{r}
+#201508 to 202108
+# PrereqCRS_GRADES4: grade ranges, PrereqCRS_GRADES: courses grades
+ fig_prerequisite_test <-  test_prereq_df1 %>%  filter(TYPE =="FTIC") %>%   
+     filter(PrereqCRSNAME == "MAC1147" & TargetCRSNAME == "MAC2311") %>% 
+     filter(PrereqCRS_GRADES4 != "DWF") %>%  
+     group_by(PrereqCRS_GRADES4 , TargetCRSPASS) %>% 
+     count() %>% na.omit() %>% # removed without prerequisites and no target coursers
+     tidyr::pivot_wider(names_from = TargetCRSPASS, values_from = n) %>% mutate(SUM = sum(Passed, Failed)) %>% 
+     mutate(ytext = paste("Chance to Pass  CRSNAME:", round(Passed/SUM*100,2),  '%', sep=" "), 
+            y2text= paste(round(Failed/SUM*100,2),  '%', sep=" ")) %>% 
+       plot_ly( x = ~PrereqCRS_GRADES4, y = ~Passed, text = ~ytext, name = "Passed", type = "bar" )  %>%  
+       layout(xaxis = list(title = "Awarded Grades in MAC1147"),
+              yaxis = list(title = "Enrolled (Count)"),
+              legend=(list(title=list(text='<b> MAC 2311 CRS NAME </b>')))) %>% 
+       add_trace( y = ~Failed, text =~y2text, name ="Failed", marker = list(color = "red") ) 
+       
+ fig_prerequisite_test 
+
+```

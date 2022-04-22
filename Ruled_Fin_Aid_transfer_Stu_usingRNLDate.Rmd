@@ -1,0 +1,291 @@
+---
+title: "RNL_DATA"
+author: "Jay Kim"
+date: "3/8/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+```{r}
+# downloaded
+text.df2021 <- read.delim(file = "RNL_2021_20210922_original_AO.txt", header = TRUE, sep="|") %>% filter(ENTRY_STAT== "B")
+text.df2019 <- read.delim(file = "RNL_2019_20210713_revised_population.txt", header = TRUE, sep = "|") %>% filter(ENTRY_STAT== "B")
+RNL_all <- rbind(text.df2019, text.df2021)
+RNL_all[RNL_all$STUDENTID=="970568506",] # not here 2022
+dim(RNL_all)
+#check
+RNL_fin <- RNL_all %>%  
+     select("Stu_UWFID"=STUDENTID ,ACADEMICYEARANDTERM,contains("house"), contains("efc"), contains("fees"),contains("depend"),contains("income"), 
+           contains("budget"), contains("tuitio"),contains("room"),contains("board"),contains("awd"),BUDGET,TUTION, ROOM ,BOARD,contains("GPA"))
+```
+
+
+```{r new hub rnl data}
+# NEW data hub
+rnl1 <- read.delim(file ="//argo.uwf.edu/its/datahubdev/rnl/archive/uwf_rnl_weekly_20211102.txt", header = TRUE, sep="|")
+
+rnl_weekly_20220214 <- read.delim("//argo.uwf.edu/its/datahubdev/rnl/archive/uwf_rnl_weekly_20220214.txt", header=TRUE, sep="|")
+RNL_2020_20210713_original <- read.delim("//argo.uwf.edu/its/datahubprod/rnl/archive/RNL_2020_20210713_original.txt", sep="|")
+head(RNL_2020_20210713_original)
+  
+dim(RNL_2020_20210713_original)
+rnl_weekly_20220214[rnl_weekly_20220214$STUDENTID=="970390912",]
+```
+### Pell chart 2022
+
+```{r}
+EFC <- seq(0,6200,100)
+EFC1 <- c(EFC, 6206, 999999)
+Pellgrant <- seq(745, 6905,100)
+Pellgrant1 <- c(0, 692, Pellgrant, 6895)
+EstimatedPell2022 <- rev(Pellgrant1)
+
+Pell_Efc_Chart <- data.frame(EFC1, EstimatedPell2022) %>% mutate(rownum= row_number())
+Pell_Efc_Chart
+
+```
+
+
+
+
+
+
+```{r downloaded data RNL}
+library(readr)
+subpop <- c("Total Transfer Students", "Total First-Year and Transfer Students","Transfer In-State Students - RESEARCH",
+            "Transfer Out-of-State Excl Alabama Students - RESEARCH","Transfer Alabama Students - RESEARCH")
+#from dashboard
+Student_Detail_Full_Data_data <- read_csv("G:/Shared drives/HMCSE-PAM Lab/Jay's Space/2022 Active Projects/01/RNL_Financial Data/Student_Detail_Full_Data_data.csv") %>% janitor::clean_names() %>% arrange(student_id)  
+ 
+transfer_student_detail_full_data <- Student_Detail_Full_Data_data %>% 
+     filter( !sub_population  %in%  subpop) %>% 
+    mutate(submitted_date = as.Date(submitted_date, "%m/%d/%Y")) %>% 
+    group_by(student_id) %>%  filter(submitted_date == max(submitted_date)) %>%  # the most recent date
+    filter(!duplicated(student_id))  %>% # removed duplicated id
+    mutate(cancel_data_id = ifelse(is.na(cancel_date), "NoCancel", "Cancel")) # identified canceled
+  
+transfer_student_detail_full_data[transfer_student_detail_full_data$cancel_data_id=="Cancel",] # canceled ids
+#write.csv(transfer_student_detail_full_data,  "transfer_student_detail_full_data.csv", row.names = FALSE) #shared with Matthew
+rnl_transfer <- transfer_student_detail_full_data %>%  select("UWFID"=student_id, fafsa_status,state,contains("tier"),contains("need"), contains("efc"),contains("income"),sub_population)
+# from excel file admitted transfer students
+library(readr)
+Admitted_Transfers_File_for_PAM_Labsheet <- read_csv("Admitted Transfers File for PAM Labsheet.csv") %>% mutate(FAFSA_ID=ifelse(FAFSA_DT > 0, "Y","N"))
+addmargins(table(Admitted_Transfers_File_for_PAM_Labsheet$STUDTYP, Admitted_Transfers_File_for_PAM_Labsheet$FAFSA_ID))
+### updated admitted transfer students 04/13/2022
+admittedtransferstudent04132022 <- read_csv("admittedtransferstudent04132022.csv")   # used for projection transfer students (04/15/2022)
+transfer_app_up <- admittedtransferstudent04132022 %>%  janitor::clean_names(case = "none") %>% 
+    select(UWFID, RESD_CODE, EFC, COA, contains("rank"),STUDTYP) %>% 
+    mutate(FAFSA_ID=ifelse(COA > 0, "Y","N")) %>% mutate(FAFSA_ID = ifelse(is.na(FAFSA_ID),  "N", FAFSA_ID))
+addmargins(table(transfer_app_up$STUDTYP, transfer_app_up$FAFSA_ID))
+#old
+# transfer_app <- Admitted_Transfers_File_for_PAM_Labsheet %>%   # uwfid
+#     select(UWFID, contains("rank"),contains("fafsa"), contains("pell"),DEC_CODE,OFFER_CODE,ADMIT_TYPE,STUDTYP,RESD_CODE,CNTY,CITIZ_CODE,VISA_TYPE)
+FLresi <- c("F","T","X")
+ALresi <-  c("Q","Z")
+NonFLAL= c("N")
+transfer_id <- merge(rnl_transfer, transfer_app_up, by ="UWFID", all.y=T) %>% 
+    mutate(FL = ifelse(state =="FL", "FL", ifelse(state == "AL", "AL", "OUTFLAL"))) %>% 
+    mutate(RESIcode = ifelse(RESD_CODE %in% FLresi, "FL",
+                          ifelse(RESD_CODE %in% ALresi, "AL", "OUTFLAL"))) %>% filter(!duplicated(UWFID))
+    
+addmargins(table(resi=transfer_id$RESIcode, FL=transfer_id$FL,transfer_id$FAFSA_ID)) 
+addmargins(table(fafsastatus=transfer_id$fafsa_status, FAFSADT=transfer_id$FAFSA_ID)) 
+   
+#write.csv(transfer_id, "transfer_id_fin.csv", row.names = FALSE)
+ 
+# add estimated pell
+transfer_id_pell <- transfer_id %>% mutate(rownum= cut(EFC, c(-1,seq(0, 6200, 100), 6209, 999999), labels=c(1:65))) %>% 
+    relocate(rownum, .after = EFC)
+transfer_id_estpell <- merge(transfer_id_pell, Pell_Efc_Chart, by="rownum", all.x=T) 
+
+max(transfer_id_pell$COA, na.rm = T) #36058
+
+write.csv(transfer_id_estpell, "transfer_id_estpell.csv", row.names = FALSE)
+transfer_id_estpell[transfer_id_estpell$UWFID=="970632016",]
+```
+
+```{r}
+transfer_id_estpell_working <- read_csv("transfer_id_estpell.csv") %>% mutate(need = as.numeric(gsub("[$,]", "", need)))  %>% 
+    #mutate(COA = ifelse(is.na(COA), 0, COA)) %>%
+    mutate( fafsa_status = ifelse(FAFSA_ID == "Y", "FAFSA Filer", fafsa_status)) %>% 
+    mutate(old_need = need, new_need = COA - EFC) %>% relocate(new_need, .after = need) %>% mutate(new_need = ifelse(new_need < 0, 0, new_need)) %>% filter(!duplicated(UWFID))
+addmargins(table(transfer_id_estpell_working$fafsa_status, transfer_id_estpell_working$FAFSA_ID))
+
+
+
+``` 
+
+### Code rules
+
+```{r coding rules}
+
+ruled_transfer <- transfer_id_estpell_working %>%  
+    relocate(new_need, .after = RESIcode) %>% relocate(efc_9_month, .after = RESIcode ) %>% 
+    relocate(fafsa_status, .after = RESIcode) %>% relocate(academic_tier, .after = RESIcode) %>% relocate(has_need, .after = RESIcode) %>%
+    relocate(new_need, .after = EFC1) %>% 
+    mutate(EstimatedPell2022 = ifelse((fafsa_status == "Non-FAFSA Filer" | is.na(COA)), 0, EstimatedPell2022 )) %>% 
+    mutate(targetpercent =  ifelse(sub_population == "Transfer FSCS Students" & academic_tier ==1 , 0.5,
+                            ifelse(sub_population == "Transfer FSCS Students" & academic_tier ==2 , 0.5,
+                            ifelse(sub_population == "Transfer FSCS Students" & academic_tier ==3 , 0.45,
+                            ifelse(sub_population == "Transfer FSCS Students" & academic_tier ==4 , 0.4,
+                            ifelse(sub_population == "Transfer FSCS Students" & academic_tier ==5 , 0.4,
+                            ifelse(sub_population == "Transfer Non FSCS Students" & academic_tier ==1 , 0.4,
+                            ifelse(sub_population == "Transfer Non FSCS Students" & academic_tier ==2 , 0.4,
+                            ifelse(sub_population == "Transfer Non FSCS Students" & academic_tier ==3 , 0.35,
+                            ifelse(sub_population == "Transfer Non FSCS Students" & academic_tier ==4 , 0.3,
+                            ifelse(sub_population == "Transfer Non FSCS Students" & academic_tier ==5 , 0.3, 0))))))))))) %>%  # target %
+    rowwise() %>%
+    mutate(targetneedbyTier =  new_need*targetpercent  ) %>%  # target need by %
+    mutate(targetneedbyTier = ifelse(new_need == 0 | targetneedbyTier < 0, 0 , targetneedbyTier)) %>%
+    relocate(EstimatedPell2022, .after = targetneedbyTier) %>% 
+    mutate(NATR = ifelse(academic_tier == 1  , 2000, ifelse(academic_tier ==2, 1500, ifelse(academic_tier ==3, 1000, 0)))) %>%  # NATR
+    mutate(ARG = ifelse(targetneedbyTier > 0 & academic_tier == 1, 2000, 
+                        ifelse(targetneedbyTier > 0 & academic_tier == 2, 1500,
+                        ifelse(targetneedbyTier > 0 & academic_tier == 3, 1000, 0 )))) %>% 
+    rowwise() %>%
+    mutate(FSGT = ifelse( (EFC <= 9309  &  RESIcode == "FL") , 3200, 0)) %>%
+    mutate(SumPriority0= sum(EstimatedPell2022, NATR, ARG, FSGT)) %>%  # sum of p0
+    mutate(sub_need0 = (targetneedbyTier - SumPriority0)) %>% mutate(sub_need0 = ifelse(sub_need0 < 0, 0 , sub_need0)) %>%
+    # rowwise() %>% stop here
+    mutate(SEOT = ifelse(EFC == 0, 1000,0)) %>% 
+    # mutate(SEOT = ifelse( (sub_need0 >= 1000 & EFC == 0 ), 1000,
+    #                      ifelse((sub_need0 < 1000 & sub_need0 >= 200 & EFC == 0), sub_need0, 0))) %>%  
+    mutate(sub_need1 = (sub_need0 - SEOT)) %>% mutate(sub_need1 = ifelse(sub_need1 < 0, 0 , sub_need1)) %>% 
+    mutate(TSGR = ifelse(sub_need1 >= 2000, 2000,  # max
+                          ifelse(sub_need1 >= 200 & sub_need1 < 2000, sub_need1, 0 ))) %>% # TSGR
+    mutate(sub_need2 = sub_need1 - TSGR)   %>% mutate(sub_need2 = ifelse(sub_need2 <0, 0 , sub_need2)) %>%         
+    mutate(FAGT = ifelse( #sub_population =="Transfer FSCS Students" & 
+                              EFC <= 14000 & RESIcode =="FL" & sub_need2 >= 3000, 3000, # max
+                          ifelse(#(sub_population =="Transfer FSCS Students" & 
+                              (EFC <= 14000 & RESIcode =="FL" & (sub_need2 < 3000 & sub_need2 >= 200)), sub_need2, 0 ))) %>% # FAGT
+     mutate(EHNT =  ifelse( RESIcode == "AL" & academic_tier <= 5 & sub_need2 >= 3000 , 3000,
+                    ifelse( RESIcode == "AL" & academic_tier <= 5 & (sub_need2 < 3000 & sub_need2 >= 200 ), sub_need2, 
+                    ifelse( RESIcode == "OUTFLAL" & academic_tier <= 5 & sub_need2 >= 6000, 6000, 
+                    ifelse( RESIcode == "OUTFLAL" & academic_tier <= 5 & (sub_need2 < 6000  & sub_need2 >= 200 ), sub_need2, 0 )))))  %>% # ENHT
+    mutate(SumPriority2 = sum(FAGT, EHNT )) %>% 
+    mutate(sub_need3 = sub_need2 - SumPriority2) %>% 
+    mutate(sub_need3 = ifelse(sub_need3 <= 200, 0, sub_need3)) %>%   
+    mutate(gap = sub_need3) %>%  # gap
+    mutate(gap = ifelse( academic_tier >= 4 & RESIcode !="FL", 0, gap )) # gap exception
+
+
+gapsum <- ruled_transfer %>% group_by(fafsa_status, sub_population, academic_tier) %>%  
+    summarise(sumgap= sum(gap, na.rm=T),max=max(gap, na.rm=T), Count=n()) 
+gapsum
+sum(gapsum$sumgap, na.rm=T) #  3801.1
+    
+ruled_transfer_temp <- ruled_transfer  %>% select(2:3,12:15,21,23,24,27:45) %>% arrange(UWFID)
+ruled_transfer[ruled_transfer$UWFID=="970557201",]
+colnames(ruled_transfer)
+colSums(is.na(ruled_transfer))
+addmargins(table( ruled_transfer_temp$sub_population, ruled_transfer_temp$RESIcode))
+write.csv(ruled_transfer_temp, "ruled_transfer_gap_V3.csv", row.names = FALSE) #970611326 #28 cols
+ruled_transfer[(ruled_transfer$academic_tier ==4 & ruled_transfer$sub_population =="Transfer FSCS Students"),]
+```
+
+### Export the projected amounts
+
+```{r  count and amount only}
+
+colnames(ruled_transfer_temp)
+average_aid <- ruled_transfer_temp %>% #filter(fafsa_status == "FAFSA Filer") %>% 
+    select(UWFID,sub_population,fafsa_status,academic_tier,RESIcode,  
+           COA,EFC, new_need,old_need,targetpercent,targetneedbyTier,EstimatedPell2022,NATR,ARG, FSGT, SEOT,TSGR, FAGT, EHNT,gap) 
+colnames(average_aid)
+binary_values <- average_aid %>% select(12:20) %>% 
+    mutate_at(c(1:9), ~ifelse(. ==0, 0, 1))
+colnames(binary_values) <- paste(names(binary_values), "Count", sep="")
+    
+ave.aid <- cbind(average_aid,binary_values)  %>%  filter(!duplicated(UWFID)) 
+
+ave.aid_sum <- ave.aid  %>% group_by(fafsa_status,SEOTCount) %>%
+    summarise(meanaid = mean(SEOT, na.rm=T), Count=n())
+ave.aid_sum
+
+
+```
+
+
+```{r save lists}
+colnames(ave.aid)
+ave.aid[ave.aid$EstimatedPell2022Count == 1,]
+write.csv(ave.aid, "Average_Aid_Count_V4.csv", row.names = FALSE)
+aid.fafsa.filter.only <- ave.aid %>% filter(fafsa_status != "Non-FAFSA Filer") %>% filter(!duplicated(UWFID))
+write.csv(aid.fafsa.filter.only, "aidfafsafilteronly_V4.csv", row.names = FALSE)
+
+aid.fafsa.filter.only %>% filter(academic_tier<=3 & RESIcode !="FL") %>% count()
+
+
+```
+
+ 
+### BUDGET Checking
+
+```{R}
+# filter amount
+awd_code <-  RNL_fin %>% select(Stu_UWFID, contains("AWD_AMT") ) %>% 
+    group_by(Stu_UWFID) %>% replace(is.na(.), 0) 
+
+awd_code$UWFAWDTotal = rowSums(awd_code[, c(2:21)])
+which(duplicated(awd_code$Stu_UWFID)) #99
+awd_code_total <- awd_code %>% relocate(UWFAWDTotal, .after =Stu_UWFID ) %>% select(1,2) %>% filter(!duplicated(Stu_UWFID))
+awd_code_total[awd_code_total$Stu_UWFID=="970552376",]
+
+#others
+awd_code_other <-  RNL_fin %>% select(Stu_UWFID, HSGPA,BUDGET,TUTION, ROOM ,BOARD,FEES,contains("EFC_"),  contains("INCOME"), contains("GPA")) %>% 
+    group_by(Stu_UWFID) %>% replace(is.na(.), 0) 
+awd <- merge(awd_code_total, awd_code_other, by= "Stu_UWFID", all.y = T) %>% rowwise() %>% 
+    mutate(BUDGET_CAL = sum(TUTION ,ROOM, BOARD, FEES)) %>% mutate(DiffBudget = BUDGET_CAL - BUDGET) %>% 
+    relocate(BUDGET_CAL, .after = BUDGET) %>%  relocate(DiffBudget, .after = BUDGET_CAL)
+
+awd[awd$Stu_UWFID=="970213332",] #970375780
+
+ 
+```
+
+```{r}
+#data set
+fin.dtl <- read_csv("G:/Shared drives/HMCSE-PAM Lab/Data 202201/Updated 1-31-22/FINANCIAL_AID_AWARDS_DTL.csv") 
+fin.dtl[fin.dtl$UNIV_ROW_ID=="970588076",]
+
+# rnl and ftic 2021
+rnl.ft21 <- merge(ft21id, rnl.fin.related.cols, by="Stu_UWFID", all.x = T) %>% filter(!duplicated(Stu_UWFID)) #1256
+#dup2021 <- rnl.ft21[which(duplicated(rnl.ft21$Stu_UWFID)),]
+rnl.ft21[rnl.ft21$Stu_UWFID=="970588076",]
+ 
+```
+
+
+```{r}
+fin.20212022 <- read_csv("G:/Shared drives/HMCSE-PAM Lab/Data 202201/Updated 1-31-22/FINANCIAL_AID_AWARDS_DTL.csv")  %>%
+    filter(!str_detect(DETAIL_CODE_DESC, "...Loan")) %>% filter(REPT_TIME_FRAME == 20212022) %>% 
+    group_by(UNIV_ROW_ID, REPT_TIME_FRAME,DETAIL_CODE,DETAIL_CODE_DESC) %>% 
+    summarise(YearAMOUNT= round(sum(TERM_AMOUNT),4)) 
+
+fin.20212022[fin.20212022$UNIV_ROW_ID =="970588076",] 
+```
+
+
+```{r}
+    
+finamount <- fin.20212022 %>% group_by(UNIV_ROW_ID) %>% summarise(FINTotalSum = sum(YearAMOUNT)) %>% data.frame()  
+
+# merge with rnl data ftic 2021
+ft21.finaid.rnl = merge(finamount, awd_code[,c(1,22)],  by.y="Stu_UWFID", by.x="UNIV_ROW_ID", all.y = T) %>% 
+    mutate(Diff = FINTotalSum-RNLTotalSum)
+ft21.finaid.rnl[ft21.finaid.rnl$UNIV_ROW_ID=="970588076",]
+```
+ 
+ 
+
+```{r}
+library(readr)
+output_ftic2021 <- read_csv("G:/Shared drives/HMCSE-PAM Lab/Jay's Space/_HIGH_PRIORITY_PROJECTS/APR/APR FTIC2021 Dropout APR 1st Math/output_ftic2021.pre.1st.apr.drop.out.rerun.v1.csv") %>% filter(!duplicated(Stu_UWFID))
+rnl.fin.related.cols[rnl.fin.related.cols$Stu_UWFID=="970556871",]
+ft21id <- output_ftic2021 %>% select(Stu_UWFID) #1163
+```
+ 

@@ -1,0 +1,438 @@
+---
+title: "Intensive Intervention FTIC Characteristics"
+author: "Jay Kim"
+date: "3/24/2022"
+output: html_document
+---
+
+The following FTIC tier groups are historically less well-prepared, and show poorer performance (or drop out) in their first year after entering UWF. This document summarizes their characteristics and looks for any patterns among  tier 4.
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = FALSE,
+	message = FALSE,
+	warning = FALSE
+)
+```
+ 
+## Overall Tier Scores
+
+**Tier 1**: score above 92 (old 90)
+
+**Tier 2**: score above 87 (old 84)
+
+**Tier 3**: score above 80 (old 77)
+
+**Tier 4: score above 72 (old 69)**
+
+**Tier 5**: score below 72 (old 69)
+ 
+$$Tier score = (higher test score*0.03125) + (12.5*hsgpa capped at 4)$$
+ 
+### Trends in Tier and Cohort 
+ 
+```{r echo=FALSE}
+library(readr)
+library(tidyverse)
+FTIC_ENROLLMENT_FIN_GROUPED2 <- read_csv("G:/Shared drives/HMCSE-PAM Lab/Jay's Space/_DataShaping/FTIC_ENROLLMENT_FIN_GROUPED2.csv")
+
+#prop.table(table(FT_tier_sum$FTIC_APRCT, FT_tier_sum$FTIC_DEMO_TIME_FRAME),2)
+FT_tier <- FTIC_ENROLLMENT_FIN_GROUPED2 %>%  filter(UWF_YearCode =="UWFYear1") %>% 
+     mutate(APPLICANT_TIER = ifelse(is.na(APPLICANT_TIER), "NA", APPLICANT_TIER)) %>% 
+    group_by(FTIC_UWFID) %>% 
+    filter(FTIC_DEMO_TIME_FRAME == min(FTIC_DEMO_TIME_FRAME)) 
+addmargins(table(COHORT=FT_tier$FTIC_Cohort, TIER=FT_tier$APPLICANT_TIER))
+prop.table(table(COHORT=FT_tier$FTIC_Cohort, TIER=FT_tier$APPLICANT_TIER),1)
+ 
+# which(duplicated(FT_tier$FTIC_UWFID))
+#    
+# app2017to2022_all_load_12_2021_V0 <- read_csv("G:/Shared drives/HMCSE-PAM Lab/Jay's Space/2021 Active Projects/08/ACCEPTANCE RATE/app2017to2022.all.load.12.2021_V0.csv")  %>%
+#     group_by(UWFID) %>% filter(APP_NO == max(APP_NO) & (APP_DT == max(APP_DT))) %>% filter(!duplicated(UWFID))
+# app_info <- app2017to2022_all_load_12_2021_V0
+# which(duplicated(app_info$UWFID))
+# 
+# FT_tier_app <- merge(FT_tier, app_info, by.x="FTIC_UWFID", by.y="UWFID", all.x = T) %>% select(-contains("PROB"))
+# which(duplicated(FT_tier_app$FTIC_UWFID))
+# glimpse(FT_tier_app)
+# test <- FT_tier_app[FT_tier_app$FTIC_Cohort=="2017","APP_DT"]
+# max(test, na.rm = T)
+# write.csv(FT_tier_app, "FT_tier_app.csv", row.names = FALSE)
+```
+
+```{r include=FALSE}
+library(readr)
+library(tidyverse)
+mytierdata <- read_csv("FT_tier_app.csv") %>%
+    mutate(APP_DT = as.Date(APP_DT, "%m/%d/%Y"), DEC_DATE= as.Date(DEC_DATE, "%m/%d/%Y")) %>% 
+    mutate(APP_DT_month = format(as.Date(APP_DT), "%Y/%m")) %>% 
+    mutate(DOB1 =  as.Date(DOB, "%m/%d/%Y"), FTIC_Age = round(as.numeric(difftime(APP_DT, DOB1, units = "weeks"))/52.25,0),
+           DaysDecision= round(as.numeric(difftime(DEC_DATE, APP_DT, units = "days")) ,0)) %>% 
+    mutate(GRADHSDATE =  as.Date(HS_GRAD_DT, "%m/%d/%Y"), GradHSYear = round(as.numeric(difftime(APP_DT, GRADHSDATE, units = "weeks"))/52.25,1)) %>% mutate_at(c(30:37), replace_na, 0) %>% 
+    mutate(GradHSYear = ifelse(GradHSYear <= 0, 0, GradHSYear)) %>% 
+    mutate(PELL_VERF = as.character(PELL_VERF)) %>% 
+    mutate_if(is.character, as.factor) 
+#Hmisc::describe(mytierdata)
+aidtypenewcols <- mytierdata %>% select(30:37) %>% mutate_at(c(1:8), ~ifelse(.x == 0, "No","Yes")) 
+names(aidtypenewcols) <- paste("Is.", names(aidtypenewcols), sep="")
+
+filtered_data <- cbind(mytierdata,aidtypenewcols) %>%     
+    mutate_if(is.character, as.factor) 
+#addmargins(table(filtered_data$Is.GrantTypes)) 
+#colnames(filtered_data)
+```
+
+## Data Description and Terms
+
+**Terms**: 
+
+ * APRCT: Above/below 2.00 in current (1st) term
+
+ * GradHSYear: time (in months) from HS graduation to UWF application (each month is 0.1)
+
+ * Days To Decision: time (in days) from aUWF application to decision (each day is 1.0)
+
+**Financial Aid Type**
+
+- Aid Categories: grants, institutional, private, other state, Bright Future, mixed
+
+ * Grant: ARPG, CRRS, PELL, etc. 
+
+ * Bright Future: State funded (Florida merit scholars funds)
+
+ * Institutional: CARS, ACEX, ARG, FAOS, etc. (institutionally funded)
+
+ * Private: PGSD#. (privately funded)
+
+ * Other State: HELI, THEO, etc. (state funded but not bright future)
+
+ * Loan: FDSL,FDUL, etc.
+
+ * Mixed: state, federal, or third-party sponsor funded
+
+**Aid Ratio**: proportion of aid type based on total aid amount (i.e. if "0.3 grant" then 30% of aid came from the grant category)
+
+**Risk-FTIC**: Below 2.00 in first term
+
+
+## Descriptive Statistics
+
+
+* **Cohort**: from 2017 to 2021
+
+* **Tier**: 4 
+
+* **Demographic Information**: ethnicity, gender, county, high school name, and state 
+
+* Performance/college information from their 1st term at UWF
+
+### Summary Table by Cohort
+
+```{r choose tier,   echo=FALSE}
+filtered_data1 <- filtered_data %>%  filter(APPLICANT_TIER == 4) # filtered tier level
+#addmargins(table(filtered_data1$Is.GrantTypes)) 
+library(gtsummary)
+
+factor_tier <- filtered_data1 %>% mutate(ST_group = ifelse(ST =="FL", "FL",ifelse(ST=="AL","AL","Others"))) %>% 
+    select(FTIC_Cohort,FTIC_Age,GradHSYear,DaysDecision,FTIC_PriorHours, ST_group, is.factor,  -contains("DT"),-contains("DATE") ,-HS_CEEB, -ZIP,-DOB, -PROGRAM_CODE, -HS_NAME,-HS_CNTY,   -PROGRAM_DESC,-CURRICULUM_COLL,-CURRICULUM_DEPT, -UWF_YearCode,- APP_PAID,-APP_STATUS,-HS_CNTY, -CNTY,-RACE,-NATION, -GENDER, -APP_DT_month, contains("Is."),GrantTypes,LoanTypes,TotalFinAid_Term,-FTIC_County,-ST, -DEC_CODE, -ADMIT_TYPE, -OFFER_CODE,
+           contains("scholar"))  
+#colSums(is.na(factor_tier))
+#addmargins(table(factor_tier$Is.GrantTypes, factor_tier$FTIC_Cohort)) 
+
+#glimpse(factor_tier)
+sumtab <- factor_tier %>%  mutate(FTIC_Cohort = as.factor(FTIC_Cohort))  %>% 
+    tbl_summary( by = FTIC_Cohort,
+                statistic = all_continuous() ~ "{mean} ({sd}) {min} {max}",
+                missing = "no"
+                            ) %>% add_n()
+sumtab
+#glimpse(factor_tier)
+```
+
+### Application Date by Cohort
+
+```{r}
+library(plotly)
+library(lubridate)
+
+
+appdate <- filtered_data1 %>%  
+    ggplot() + geom_bar(aes(x=APP_DT_month, fill=factor(FTIC_Cohort))) + 
+    coord_flip() + 
+    facet_grid(~FTIC_Cohort)
+
+ggplotly(appdate)
+
+
+```
+* Students tended to apply later in 2021 - the bulk applied in January.
+
+* By contrast, from 2017 to 2020, most applications came in October and November. 
+
+
+### Days from Application to Decision by Cohort and Applicatioin Number
+
+```{r}
+#hist(filtered_data1$DaysDecision)
+decisiondays <- filtered_data1 %>% #filter(DaysDecision <= 200) %>% 
+    ggplot() + geom_histogram(aes(x=DaysDecision ,fill=factor(APP_NO))) + coord_flip() +facet_grid(~FTIC_Cohort)
+ggplotly(decisiondays)
+```
+* Most decisions were made within 100 days.
+
+* There are some applicants with multiple applications which, combined, within 25 days for decision.
+
+
+### Applied Before/After graduating high school by Some Financial Aid (Yes/No)
+
+```{r}
+
+gradhs <- filtered_data1 %>%  
+    mutate(AfterGradHS=ifelse(GradHSYear !=0, "AppliedAfterGradHS","AppliedBeforeGradHS")) %>%  
+    group_by(AfterGradHS, Is.TotalFinAid_Term) %>% dplyr::summarise(Count=n()) %>%  arrange(-Count) %>%
+    ggplot(aes(x=reorder( AfterGradHS,Is.TotalFinAid_Term), y= Count, fill=Is.TotalFinAid_Term)) + geom_col() +
+    scale_fill_manual(values = c("orange","gray"))
+#summary(table(gradhs$FTIC_APRCT, gradhs$AfterGradHS))
+ggplotly(gradhs)  
+# library(doBy)
+# summaryBy(c( "AGE") ~ AfterGradHS, data = gradhs)
+```
+* Most students without financial aid were traditional applicants (they applied before graduating HS).
+
+
+### Summary of GPA and Prior Hours by Hs Name and Ethnicity
+
+```{r}
+
+race.prior <- filtered_data1 %>%  
+    mutate(FTIC_PriorHours= ifelse(is.na(FTIC_PriorHours), 0, FTIC_PriorHours)) %>%            group_by(HS_NAME,FTIC_Ethnicity) %>% 
+    dplyr::summarise(Count=n(),MIN=min(FTIC_PriorHours), MeanPriorHrs= round(mean(FTIC_PriorHours),2),
+                     SD= round(sd(FTIC_PriorHours),2),
+                     MAX=max(FTIC_PriorHours), MeanAge=round(mean(FTIC_Age, na.rm=T),2),
+                     MeanGPA=round(mean(FTIC_UWFGPA),2)) %>% 
+    arrange(-Count) %>%  filter(Count >= 5) 
+
+knitr::kable(race.prior)
+```
+
+
+### Entry College and Gender
+
+```{r}
+
+college <- filtered_data1 %>% group_by(FTIC_College, FTIC_Gender) %>% summarise(Count=n()) %>% 
+ggplot(aes(x= reorder(FTIC_College, FTIC_Gender) ,y=Count, fill=FTIC_Gender )) + geom_bar(stat = "identity") +
+    coord_flip() 
+
+ggplotly(college)
+
+```
+* HMCSE and COB Retained the most male FTIC.
+
+* UKCOH retained the most female FTIC.
+
+
+
+### Entry Department (cutoff >= 10)
+
+```{r}
+
+department <- filtered_data1 %>% group_by(FTIC_Department) %>% summarise(Count=n()) %>% filter(Count>=10) %>% 
+ggplot(aes(x= reorder(FTIC_Department, Count) ,y=Count, fill=FTIC_Department )) + 
+    geom_bar(stat = "identity") +
+    coord_flip()
+
+ggplotly(department)
+```
+* The most popular departments (in order) for Tier 4 by enrollment are biology, Business Administration, Nursing, Undeclared, and Computer Science.
+
+
+
+### Entry Program by 1st Term UWF GPA (APRCT) (Above 2.00)
+
+```{r}
+
+program <- filtered_data1 %>% group_by(FTIC_ProgramCIPDesc, FTIC_APRCT) %>% summarise(Count=n()) %>% arrange(FTIC_ProgramCIPDesc,FTIC_APRCT,-Count) %>% 
+    filter(Count >= 10) %>% 
+ggplot(aes(x= reorder(FTIC_ProgramCIPDesc, Count) ,y=Count, fill=FTIC_APRCT )) + 
+    geom_bar(stat = "identity") +
+    coord_flip()
+
+ggplotly(program)
+```
+* The largest groups of at-risk FTIC Below 2.00 came from the Business/Commerce general, Nursing, Biomedical Science and Cyber security programs.
+
+
+
+### Top High school (cutoff >= 4) & Entry Program
+
+```{r}
+hs <- filtered_data1 %>% group_by(FTIC_ProgramCIPDesc, HS_NAME) %>% 
+    mutate(FTIC_ProgramCIPDesc = substring(FTIC_ProgramCIPDesc,0,10)) %>% 
+    dplyr::summarise(Count=n()) %>% arrange(-Count) %>% 
+    filter(Count >= 3) %>% 
+    ggplot() + geom_col(aes(x=reorder(FTIC_ProgramCIPDesc,HS_NAME), y= Count, fill=HS_NAME)) +#+coord_flip()
+    #theme_bw(base_size = 9)+
+    theme(axis.text = element_text(angle = 20))
+ggplotly(hs)
+
+
+```
+
+* Top 3 most popular programs by high school are Nursing, Business/Commerce, General, and Cyber Security.
+
+* Most students from NA HS name (GED) and Fort Walton HS entered the Nursing program.
+
+* Most Gulf Breeze HS and JM Tate HS graduates entered the Business/Commerce General program.
+
+* Most West FL HS graduates entered the Cyber security program.
+
+### Residence Hall and some type of aid
+
+```{r}
+
+resident <- filtered_data1 %>% group_by(FTIC_ResidenceHall, Is.TotalFinAid_Term) %>% summarise(Count=n()) %>% 
+     ggplot(aes(x= reorder(FTIC_ResidenceHall, Is.TotalFinAid_Term) ,y=Count, fill=Is.TotalFinAid_Term )) + 
+    geom_bar(stat = "identity") +
+    coord_flip() + scale_fill_manual(values = c("darkgray","lightblue"))
+
+ggplotly(resident)
+
+```
+* Most students who did not have any financial aid were commuters or stayed in Martin Hall
+
+
+### Tri-County by Grant Type Aid
+
+```{r}
+hscnty <- filtered_data1 %>% group_by(FTIC_County, Is.GrantTypes) %>% 
+    dplyr::summarise(Count=n()) %>% arrange( -Count ) %>% 
+    filter(Count >= 5) %>% 
+    ggplot(aes(x=reorder(FTIC_County,Count), y= Count, fill=Is.GrantTypes)) + geom_col( ) +
+    coord_flip()
+ggplotly(hscnty)
+
+```
+
+* Most were came from tri-county and Non-FL with grants.
+
+
+
+### High School Name and Ethnicity
+
+```{r}
+
+hsrace <- filtered_data1 %>% group_by( HS_NAME,FTIC_Ethnicity ) %>% 
+    dplyr::summarise(Count=n()) %>% 
+    arrange( -Count) %>% 
+    filter(Count >= 5) %>% 
+ggplot() + geom_col(aes(x= HS_NAME, y=Count, fill=FTIC_Ethnicity)) +coord_flip()
+ggplotly(hsrace)
+
+```
+
+* Most African Americans came from not reporting a high school name (GED), WF HS Tech, and Milton HS.
+
+* Most Hispanics came from GED, Navarre HS, and Fort Walton Beach HS.
+
+* Most whites and "two or more ethnicity" came from JM Tate HS.
+
+
+### Total Financial Aid Amount & APRCT
+
+```{r}
+aid.race <- ggplot(filtered_data1,aes(x=TotalFinAid_Term, fill=FTIC_APRCT)) +
+    geom_histogram() #+ scale_fill_gradient(low="black", high="blue")
+ggplotly(aid.race)
+```
+
+* A little less than 30% of FTIC did not have any type of aid, and were the bulk of the below 2.00 group and course withdrawn.
+
+* Among students with aid, the count of at-risk for each group is fairly consistent.
+
+
+
+### Financial Information: Total Financial Aid
+
+ $$AidRatio = Aid Type Amount/Total Aid Amount$$
+
+```{r}
+library(plotly)
+aid_ratio <- filtered_data1 %>% mutate_at(c(30:36), funs(./TotalFinAid_Term)) %>% 
+    mutate_at(c(30:36), funs(round(., digits = 2))) %>% mutate_at(c(30:36), replace_na, 0) %>% 
+    select(30:36) %>% pivot_longer(everything(), names_to = "AidType", values_to = "Ratio") %>%
+    filter(Ratio > 0) %>%  # filtered no aid type
+    ggplot(aes(x=Ratio,   fill=factor(AidType)) ) + geom_histogram() +labs(title = "Aid Type Ratio")
+
+ ggplotly(aid_ratio)
+
+```
+
+* For those with only one type of aid, most were grants (152), loans (80), and UWF funded (50).
+
+* Very few FTIC have other types of financial aid.
+
+* Among those with more than one aid type, grants contributed more than 50% and loans contributed between 25 to 45% of their total financial aid.
+
+### Financial Information by Group: Grant & Loan Types and APRCT
+
+```{r}
+library(plotly)
+alltype <- filtered_data1[,c(18,32:33,37)] %>% tidyr::pivot_longer(c(2,3,4), names_to = "AidType", values_to = "Amount") %>%
+    filter(!is.na(Amount) ) %>% 
+    #mutate(Amount = round(Amount,2)) %>% 
+  ggplot( aes(x= Amount, fill=FTIC_APRCT , colour=FTIC_APRCT)) + geom_histogram() + #facet_grid(~AidType) 
+    #coord_flip() + 
+    facet_grid(~AidType)
+ ggplotly(alltype)
+#colnames(filtered_data1)
+```
+
+* Most FTIC's aid came from grants and loans.
+
+* Most at-risk FTIC came from the group with no aid.
+
+### The Aid type for the **at-risk** FTIC (Below 2.00)
+
+
+```{r}
+aid.risk <- filtered_data1 %>% 
+    filter(FTIC_UWFGPA < 2.00) %>% 
+    select(84:90) %>%
+    pivot_longer(c(1:7), names_to = "AidType", values_to = "Aid_Yes_No") %>% filter(!is.na(Aid_Yes_No)) %>% 
+    ggplot(aes(x=AidType, fill=Aid_Yes_No)) + geom_bar(position="dodge") + facet_grid(~AidType) +
+    labs(title = "Financial Aid Type among the risk-FTIC" ) + xlab(label ="") + coord_flip()
+ 
+ggplotly(aid.risk) 
+ 
+```
+
+* Most aid for the below 2.00 group came from grants and loans.
+
+ 
+
+```{r eval=FALSE, include=FALSE}
+granttype <- read_csv("G:/Shared drives/HMCSE-PAM Lab/Jay's Space/2022 Active Projects/01/ACEX_CAL/granttype.csv")
+ids <- filtered_data1 %>% select("UNIV_ROW_ID"=FTIC_UWFID)
+granttypeID <-  merge(ids, granttype, by="UNIV_ROW_ID", all.x = T)
+addmargins(table(granttypeID$DETAIL_CODE, granttypeID$REPT_TIME_FRAME))
+```
+
+
+
+### Pivot Table (APRCT by Ethnicity and Gender (%))
+
+* The highest proportion of the below 2.0 group came from African American males (41%) with some type of grant.
+
+```{r}
+
+library(rpivotTable)
+rpivotTable(filtered_data1, aggregatorName = "Count as Fraction of Rows",
+            rows = c("Is.TotalFinAid_Term", "FTIC_Gender","FTIC_Ethnicity"),
+             cols = c("FTIC_APRCT"),
+            height = "500px", overflow="scroll",
+             subtotals = T, rendererName = "Table With Subtotal")
+```
+
+
